@@ -8,7 +8,7 @@ interface StatusBarProps {
 
 const StatusBar: React.FC<StatusBarProps> = ({ indexProgress, resultCount }) => {
   const isIndexing = indexProgress && !indexProgress.done;
-  const fileCount = indexProgress?.indexed || 0;
+  const fileCount = indexProgress?.total_files || indexProgress?.indexed || 0;
 
   return (
     <div className="status-bar">
@@ -22,10 +22,15 @@ const StatusBar: React.FC<StatusBarProps> = ({ indexProgress, resultCount }) => 
         </span>
       </div>
       <div className="status-item">
-        <span>已索引: {fileCount.toLocaleString()} 个文件</span>
+        <span>
+          已索引: {fileCount.toLocaleString()} 个对象
+        </span>
       </div>
       <div className="status-item">
-        <span>搜索结果: {resultCount.toLocaleString()}</span>
+        <span>结果: {resultCount.toLocaleString()}</span>
+      </div>
+      <div className="status-item" style={{ marginLeft: "auto" }}>
+        <span>快捷键: Ctrl/Cmd+Shift+F</span>
       </div>
     </div>
   );

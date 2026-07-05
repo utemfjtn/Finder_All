@@ -21,10 +21,24 @@ pub struct SearchOptions {
     pub file_type: String,
     #[serde(default)]
     pub extensions: Vec<String>,
+    #[serde(default = "default_sort_by")]
+    pub sort_by: String,
+    #[serde(default)]
+    pub sort_desc: bool,
+    #[serde(default)]
+    pub path_filter: String,
+    #[serde(default)]
+    pub use_regex: bool,
+    #[serde(default)]
+    pub match_path: bool,
 }
 
 fn default_file_type() -> String {
     "all".to_string()
+}
+
+fn default_sort_by() -> String {
+    "relevance".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +47,7 @@ pub struct IndexProgress {
     pub total: usize,
     pub current_path: String,
     pub done: bool,
+    pub total_files: usize,
 }
 
 impl Default for IndexProgress {
@@ -42,6 +57,7 @@ impl Default for IndexProgress {
             total: 0,
             current_path: String::new(),
             done: true,
+            total_files: 0,
         }
     }
 }
@@ -49,9 +65,11 @@ impl Default for IndexProgress {
 #[derive(Debug, Clone)]
 pub struct IndexedFile {
     pub path: PathBuf,
+    pub path_lower: String,
     pub name: String,
     pub name_lower: String,
     pub is_dir: bool,
     pub size: u64,
     pub modified: i64,
+    pub extension: String,
 }

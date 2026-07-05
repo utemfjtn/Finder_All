@@ -3,10 +3,12 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use parking_lot::RwLock;
 use rayon::prelude::*;
+use regex::Regex;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
+use std::time::Instant;
 use walkdir::WalkDir;
 
 pub struct FileIndex {
@@ -45,7 +47,12 @@ impl FileIndex {
     }
 
     pub fn get_progress(&self) -> IndexProgress {
-        self.progress.read().clone()
+        let progress = self.progress.read().clone();
+        let files = self.files.read();
+        IndexProgress {
+            total_files: files.len(),
+            ..progress
+        }
     }
 
     pub fn start_indexing(self: &Arc<Self>) {
@@ -73,24 +80,51 @@ impl FileIndex {
         }
 
         thread::spawn(move || {
+            let start = Instant::now();
             self_arc.do_indexing(paths);
+            let elapsed = start.elapsed();
+            println!("Indexing completed in {:?}", elapsed);
             let mut indexing = self_arc.is_indexing.write();
             *indexing = false;
         });
     }
 
     fn do_indexing(&self, paths: Vec<String>) {
-        let mut new_files: Vec<IndexedFile> = Vec::new();
-        let mut indexed = 0usize;
+        let mut all_dirs: Vec<(PathBuf, bool)> = Vec::new();
 
-        {
-            let mut progress = self.progress.write();
-            progress.done = false;
-            progress.indexed = 0;
-            progress.total = 0;
-            progress.current_path = String::new();
+        for base_path in &paths {
+            let base = PathBuf::from(base_path);
+            if !base.exists() {
+                continue;
+            }
+            all_dirs.push((base, false));
         }
 
+        while let Some((dir, _)) = all_dirs.pop() {
+            let walker = WalkDir::new(&dir)
+                .min_depth(1)
+                .max_depth(1)
+                .follow_links(false)
+                .into_iter()
+                .filter_entry(|e| {
+                    let name = e.file_name().to_string_lossy();
+                    !(name.starts_with('.')
+                        || name == "node_modules"
+                        || name == "target"
+                        || name == "dist"
+                        || name == "build")
+                });
+
+            for entry in walker.flatten() {
+                let path = entry.path().to_path_buf();
+                if entry.file_type().is_dir() {
+                    all_dirs.push((path, false));
+                }
+            }
+        }
+
+        let mut new_files: Vec<IndexedFile> = Vec::new();
+        let mut indexed = 0usize;
         let mut seen = HashSet::new();
 
         for base_path in &paths {
@@ -119,12 +153,17 @@ impl FileIndex {
                     continue;
                 }
 
-                let name = entry
-                    .file_name()
-                    .to_string_lossy()
-                    .to_string();
+                let name = entry.file_name().to_string_lossy().to_string();
                 let name_lower = name.to_lowercase();
                 let is_dir = entry.file_type().is_dir();
+
+                let extension = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+
+                let path_lower = path_str.to_lowercase();
 
                 let (size, modified) = entry
                     .metadata()
@@ -142,15 +181,17 @@ impl FileIndex {
 
                 new_files.push(IndexedFile {
                     path,
+                    path_lower,
                     name,
                     name_lower,
                     is_dir,
                     size,
                     modified,
+                    extension,
                 });
 
                 indexed += 1;
-                if indexed % 100 == 0 {
+                if indexed % 500 == 0 {
                     let mut progress = self.progress.write();
                     progress.indexed = indexed;
                     progress.current_path = path_str;
@@ -174,14 +215,65 @@ impl FileIndex {
 
     pub fn search(&self, options: SearchOptions) -> Vec<FileItem> {
         let query = options.query.trim();
-        if query.is_empty() {
+        let has_filter = !query.is_empty()
+            || !options.path_filter.is_empty()
+            || !options.extensions.is_empty()
+            || options.file_type != "all";
+        if !has_filter {
             return Vec::new();
         }
 
         let files = self.files.read();
         let query_lower = query.to_lowercase();
+        let path_filter_lower = options.path_filter.to_lowercase();
 
-        let results: Vec<FileItem> = files
+        let regex = if options.use_regex && !query.is_empty() {
+            Regex::new(&if options.case_sensitive {
+                query.to_string()
+            } else {
+                format!("(?i){}", query)
+            })
+            .ok()
+        } else {
+            None
+        };
+
+        let wildcard_regex = if !options.use_regex
+            && !query.is_empty()
+            && (query.contains('*') || query.contains('?'))
+        {
+            let pattern = query
+                .chars()
+                .map(|c| match c {
+                    '*' => ".*".to_string(),
+                    '?' => ".".to_string(),
+                    '.' => "\\.".to_string(),
+                    '+' => "\\+".to_string(),
+                    '(' => "\\(".to_string(),
+                    ')' => "\\)".to_string(),
+                    '[' => "\\[".to_string(),
+                    ']' => "\\]".to_string(),
+                    '{' => "\\{".to_string(),
+                    '}' => "\\}".to_string(),
+                    '\\' => "\\\\".to_string(),
+                    '^' => "\\^".to_string(),
+                    '$' => "\\$".to_string(),
+                    '|' => "\\|".to_string(),
+                    c => c.to_string(),
+                })
+                .collect::<String>();
+            Regex::new(&format!("(?i)^{}$", pattern)).ok()
+        } else {
+            None
+        };
+
+        let ext_set: HashSet<String> = options
+            .extensions
+            .iter()
+            .map(|e| e.to_lowercase())
+            .collect();
+
+        let results: Vec<(FileItem, i64)> = files
             .par_iter()
             .filter_map(|f| {
                 if options.file_type == "file" && f.is_dir {
@@ -191,14 +283,14 @@ impl FileIndex {
                     return None;
                 }
 
-                if !options.extensions.is_empty() && !f.is_dir {
-                    let ext = f
-                        .path
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("")
-                        .to_lowercase();
-                    if !options.extensions.iter().any(|e| e.to_lowercase() == ext) {
+                if !ext_set.is_empty() && !f.is_dir {
+                    if !ext_set.contains(&f.extension) {
+                        return None;
+                    }
+                }
+
+                if !path_filter_lower.is_empty() {
+                    if !f.path_lower.contains(&path_filter_lower) {
                         return None;
                     }
                 }
@@ -208,57 +300,132 @@ impl FileIndex {
                 } else {
                     &f.name_lower
                 };
+                let search_path = if options.case_sensitive {
+                    f.path.to_str().unwrap_or("")
+                } else {
+                    &f.path_lower
+                };
                 let search_query = if options.case_sensitive {
                     query
                 } else {
                     &query_lower
                 };
 
-                let score = if options.match_whole_word {
-                    if search_name == search_query {
+                let score = if query.is_empty() {
+                    Some(100i64)
+                } else if let Some(re) = &regex {
+                    if re.is_match(search_name) || (options.match_path && re.is_match(search_path)) {
+                        Some(800i64)
+                    } else {
+                        None
+                    }
+                } else if let Some(wild_re) = &wildcard_regex {
+                    if wild_re.is_match(search_name)
+                        || (options.match_path && wild_re.is_match(search_path))
+                    {
+                        Some(700i64)
+                    } else {
+                        None
+                    }
+                } else if options.match_whole_word {
+                    if search_name == search_query
+                        || (options.match_path && f.path.ends_with(search_query))
+                    {
                         Some(1000i64)
                     } else {
                         None
                     }
                 } else if search_name.contains(search_query) {
-                    Some(500i64 + (100 - search_name.len() as i64).max(0))
+                    let exact_bonus = if search_name == search_query { 200 } else { 0 };
+                    let start_bonus = if search_name.starts_with(search_query) {
+                        100
+                    } else {
+                        0
+                    };
+                    Some(500i64 + exact_bonus + start_bonus + (100 - search_name.len() as i64).max(0))
+                } else if options.match_path && search_path.contains(search_query) {
+                    Some(400i64)
                 } else {
-                    self.matcher.fuzzy_match(search_name, search_query)
+                    let name_score = self.matcher.fuzzy_match(search_name, search_query);
+                    if name_score.is_some() {
+                        name_score
+                    } else if options.match_path {
+                        self.matcher
+                            .fuzzy_match(search_path, search_query)
+                            .map(|s| s - 50)
+                    } else {
+                        None
+                    }
                 };
 
-                score.map(|s| (f, s))
-            })
-            .map(|(f, _score)| FileItem {
-                path: f.path.to_string_lossy().to_string(),
-                name: f.name.clone(),
-                is_dir: f.is_dir,
-                size: f.size,
-                modified: f.modified,
+                score.map(|s| {
+                    (
+                        FileItem {
+                            path: f.path.to_string_lossy().to_string(),
+                            name: f.name.clone(),
+                            is_dir: f.is_dir,
+                            size: f.size,
+                            modified: f.modified,
+                        },
+                        s,
+                    )
+                })
             })
             .collect();
 
         let mut sorted = results;
+        let sort_by = options.sort_by.as_str();
+        let desc = options.sort_desc;
+
         sorted.sort_by(|a, b| {
-            let a_contains = a.name.to_lowercase().contains(&query_lower);
-            let b_contains = b.name.to_lowercase().contains(&query_lower);
-            if a_contains && !b_contains {
-                std::cmp::Ordering::Less
-            } else if !a_contains && b_contains {
-                std::cmp::Ordering::Greater
-            } else {
-                let a_is_dir = a.is_dir;
-                let b_is_dir = b.is_dir;
-                if a_is_dir && !b_is_dir {
-                    std::cmp::Ordering::Less
-                } else if !a_is_dir && b_is_dir {
-                    std::cmp::Ordering::Greater
-                } else {
-                    a.name.len().cmp(&b.name.len())
+            let cmp = match sort_by {
+                "name" => a.0.name.cmp(&b.0.name),
+                "size" => a.0.size.cmp(&b.0.size),
+                "date" | "modified" => a.0.modified.cmp(&b.0.modified),
+                "path" => a.0.path.cmp(&b.0.path),
+                "type" => {
+                    let ext_a = a
+                        .0
+                        .path
+                        .rsplit('.')
+                        .next()
+                        .unwrap_or("")
+                        .to_lowercase();
+                    let ext_b = b
+                        .0
+                        .path
+                        .rsplit('.')
+                        .next()
+                        .unwrap_or("")
+                        .to_lowercase();
+                    ext_a.cmp(&ext_b).then(a.0.name.cmp(&b.0.name))
                 }
+                "relevance" => {
+                    let score_cmp = b.1.cmp(&a.1);
+                    if score_cmp != std::cmp::Ordering::Equal {
+                        score_cmp
+                    } else {
+                        let a_is_dir = a.0.is_dir;
+                        let b_is_dir = b.0.is_dir;
+                        if a_is_dir && !b_is_dir {
+                            std::cmp::Ordering::Less
+                        } else if !a_is_dir && b_is_dir {
+                            std::cmp::Ordering::Greater
+                        } else {
+                            a.0.name.len().cmp(&b.0.name.len())
+                        }
+                    }
+                }
+                _ => b.1.cmp(&a.1),
+            };
+
+            if desc && sort_by != "relevance" {
+                cmp.reverse()
+            } else {
+                cmp
             }
         });
 
-        sorted.truncate(500);
-        sorted
+        sorted.into_iter().map(|(item, _)| item).take(500).collect()
     }
 }
