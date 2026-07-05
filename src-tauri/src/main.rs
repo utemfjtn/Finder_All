@@ -4,8 +4,8 @@ mod models;
 use index::FileIndex;
 use models::*;
 use std::sync::Arc;
+use tauri::Manager;
 use tauri::State;
-use tauri_plugin_shell::ShellExt;
 
 struct AppState {
     file_index: Arc<FileIndex>,
@@ -31,15 +31,13 @@ fn get_index_status(state: State<AppState>) -> Result<IndexProgress, String> {
 }
 
 #[tauri::command]
-fn open_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    app.shell()
-        .open(&path, None)
-        .map_err(|e| e.to_string())?;
+fn open_file(path: String) -> Result<(), String> {
+    opener::open(&path).map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
-fn open_file_location(app: tauri::AppHandle, path: String) -> Result<(), String> {
+fn open_file_location(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;
@@ -50,8 +48,10 @@ fn open_file_location(app: tauri::AppHandle, path: String) -> Result<(), String>
     }
     #[cfg(target_os = "macos")]
     {
-        app.shell()
-            .open("reveal", Some(&path))
+        use std::process::Command;
+        Command::new("open")
+            .args(["-R", &path])
+            .spawn()
             .map_err(|e| e.to_string())?;
     }
     #[cfg(target_os = "linux")]
@@ -60,9 +60,7 @@ fn open_file_location(app: tauri::AppHandle, path: String) -> Result<(), String>
             .parent()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| "/".to_string());
-        app.shell()
-            .open(&parent, None)
-            .map_err(|e| e.to_string())?;
+        opener::open(&parent).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -82,7 +80,10 @@ fn get_root_dirs() -> Result<Vec<String>, String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        Ok(vec!["/".to_string(), std::env::var("HOME").unwrap_or_else(|_| "~".to_string())])
+        Ok(vec![
+            "/".to_string(),
+            std::env::var("HOME").unwrap_or_else(|_| "~".to_string()),
+        ])
     }
 }
 
@@ -110,12 +111,10 @@ fn rebuild_index(state: State<AppState>) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+fn main() {
     let file_index = FileIndex::new();
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .manage(AppState {
             file_index: Arc::clone(&file_index),
         })
