@@ -29,6 +29,8 @@ jobs:
             target: x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.platform }}
+    outputs:
+      release_upload_url: ${{ steps.tauri-action.outputs.release_upload_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -76,6 +78,7 @@ jobs:
           ls -la icon.icns
 
       - name: Build Tauri app
+        id: tauri-action
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -93,8 +96,99 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-  notify:
+  universal-macos:
     needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Generate macOS .icns icon
+        run: |
+          cd src-tauri/icons
+          mkdir -p icon.iconset
+          sips -z 16 16 icon.png --out icon.iconset/icon_16x16.png
+          sips -z 32 32 icon.png --out icon.iconset/icon_16x16@2x.png
+          sips -z 32 32 icon.png --out icon.iconset/icon_32x32.png
+          sips -z 64 64 icon.png --out icon.iconset/icon_32x32@2x.png
+          sips -z 128 128 icon.png --out icon.iconset/icon_128x128.png
+          sips -z 256 256 icon.png --out icon.iconset/icon_128x128@2x.png
+          sips -z 256 256 icon.png --out icon.iconset/icon_256x256.png
+          sips -z 512 512 icon.png --out icon.iconset/icon_256x256@2x.png
+          sips -z 512 512 icon.png --out icon.iconset/icon_512x512.png
+          sips -z 1024 1024 icon.png --out icon.iconset/icon_512x512@2x.png
+          iconutil -c icns icon.iconset -o icon.icns
+          rm -rf icon.iconset
+
+      - name: Build for aarch64
+        run: npx tauri build --target aarch64-apple-darwin
+
+      - name: Build for x86_64
+        run: npx tauri build --target x86_64-apple-darwin
+
+      - name: Create Universal Binary
+        run: |
+          APP_NAME="Finder All"
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARM_APP="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/${APP_NAME}.app"
+          X64_APP="src-tauri/target/x86_64-apple-darwin/release/bundle/macos/${APP_NAME}.app"
+          UNIVERSAL_DIR="src-tauri/target/universal-macos/release/bundle/macos"
+          UNIVERSAL_APP="${UNIVERSAL_DIR}/${APP_NAME}.app"
+
+          mkdir -p "${UNIVERSAL_DIR}"
+          cp -R "${X64_APP}" "${UNIVERSAL_APP}"
+
+          # Find all binaries and lipo them
+          find "${ARM_APP}" -type f -perm +111 -not -name "*.dylib" | while read arm_bin; do
+            rel_path="${arm_bin#${ARM_APP}/}"
+            x64_bin="${X64_APP}/${rel_path}"
+            universal_bin="${UNIVERSAL_APP}/${rel_path}"
+            if [ -f "${x64_bin}" ]; then
+              lipo -create -output "${universal_bin}" "${arm_bin}" "${x64_bin}" || echo "Skipping ${rel_path}"
+            fi
+          done
+
+          # Handle dylibs
+          find "${ARM_APP}" -name "*.dylib" | while read arm_bin; do
+            rel_path="${arm_bin#${ARM_APP}/}"
+            x64_bin="${X64_APP}/${rel_path}"
+            universal_bin="${UNIVERSAL_APP}/${rel_path}"
+            if [ -f "${x64_bin}" ]; then
+              lipo -create -output "${universal_bin}" "${arm_bin}" "${x64_bin}" || echo "Skipping ${rel_path}"
+            fi
+          done
+
+          echo "Universal binary created at ${UNIVERSAL_APP}"
+          file "${UNIVERSAL_APP}/Contents/MacOS/${APP_NAME}"
+
+          # Create DMG
+          cd "${UNIVERSAL_DIR}"
+          hdiutil create -volname "${APP_NAME}" -srcfolder "${APP_NAME}.app" -ov -format UDZO "${APP_NAME}_${VERSION}_universal.dmg"
+          echo "DMG created at $(pwd)/${APP_NAME}_${VERSION}_universal.dmg"
+          ls -la *.dmg
+
+      - name: Upload Universal DMG to Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          DMG_PATH="src-tauri/target/universal-macos/release/bundle/macos/Finder All_${VERSION}_universal.dmg"
+          gh release upload "${GITHUB_REF_NAME}" "${DMG_PATH}" --clobber
+
+  notify:
+    needs: [build, universal-macos]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -106,8 +200,15 @@ jobs:
           REPO="${{ github.repository }}"
           RELEASE_URL="https://github.com/${REPO}/releases/tag/${TAG}"
           BUILD_STATUS="${{ needs.build.result }}"
+          UNIVERSAL_STATUS="${{ needs.universal-macos.result }}"
 
-          export TAG REPO RELEASE_URL BUILD_STATUS
+          if [ "$BUILD_STATUS" = "success" ] && [ "$UNIVERSAL_STATUS" = "success" ]; then
+            FINAL_STATUS="success"
+          else
+            FINAL_STATUS="failure"
+          fi
+
+          export TAG REPO RELEASE_URL FINAL_STATUS
 
           python3 << 'PYEOF'
           import json
@@ -117,7 +218,7 @@ jobs:
           tag = os.environ["TAG"]
           repo = os.environ["REPO"]
           release_url = os.environ["RELEASE_URL"]
-          build_status = os.environ.get("BUILD_STATUS", "unknown")
+          build_status = os.environ.get("FINAL_STATUS", "unknown")
           webhook_raw = os.environ.get("LARK_WEBHOOK", "")
 
           if webhook_raw.startswith("http"):
@@ -142,12 +243,11 @@ jobs:
               f"**仓库：** [{repo}]({release_url})\n"
               f"**状态：** {status_text}\n\n"
               "**支持平台：**\n"
-              "- macOS (Apple Silicon M1/M2/M3)\n"
-              "- macOS (Intel)\n"
+              "- macOS Universal (Intel + Apple Silicon M1/M2/M3/M4)\n"
               "- Linux (x64)\n"
               "- Windows (x64)\n\n"
               "**安装包类型：**\n"
-              "- macOS: .dmg / .app.tar.gz\n"
+              "- macOS: .dmg (Universal)\n"
               "- Linux: .deb / .AppImage / .rpm\n"
               "- Windows: .msi / .exe"
           )

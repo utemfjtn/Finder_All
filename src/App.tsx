@@ -5,6 +5,7 @@ import Sidebar from "./components/Sidebar";
 import StatusBar from "./components/StatusBar";
 import FilePreview from "./components/FilePreview";
 import HelpPanel from "./components/HelpPanel";
+import EmptyState from "./components/EmptyState";
 import {
   searchFiles,
   getIndexStatus,
@@ -267,13 +268,22 @@ function App() {
           onHistorySelect={handleHistorySelect}
           onHelpClick={() => setShowHelp(true)}
         />
-        <FileList
-          files={results}
-          selectedIndex={selectedIndex}
-          onSelect={setSelectedIndex}
-          onOpen={handleOpenFile}
-          onFavoritesChange={refreshSidebar}
-        />
+        {results.length === 0 && !query && indexProgress && indexProgress.total_files === 0 && (
+          <EmptyState
+            isIndexing={!indexProgress.done}
+            fileCount={indexProgress.indexed}
+            onHelpClick={() => setShowHelp(true)}
+          />
+        )}
+        {results.length > 0 && (
+          <FileList
+            files={results}
+            selectedIndex={selectedIndex}
+            onSelect={setSelectedIndex}
+            onOpen={handleOpenFile}
+            onFavoritesChange={refreshSidebar}
+          />
+        )}
         <StatusBar indexProgress={indexProgress} resultCount={results.length} />
       </div>
       <FilePreview file={previewFile} onClose={() => setPreviewFile(null)} />

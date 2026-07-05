@@ -204,8 +204,24 @@ fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::
 
     let menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
 
-    let rgba = vec![0u8; 4 * 32 * 32];
-    let icon = Image::new(&rgba, 32, 32);
+    let icon_bytes = include_bytes!("../icons/icon.png");
+    let decoder = png::Decoder::new(&icon_bytes[..]);
+    let mut reader = decoder.read_info()?;
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf)?;
+    let rgba = match info.color_type {
+        png::ColorType::Rgba => buf,
+        png::ColorType::Rgb => {
+            let mut rgba_buf = Vec::with_capacity((info.width * info.height * 4) as usize);
+            for chunk in buf.chunks(3) {
+                rgba_buf.extend_from_slice(chunk);
+                rgba_buf.push(255);
+            }
+            rgba_buf
+        }
+        _ => return Err("Unsupported PNG color type".into()),
+    };
+    let icon = Image::new(&rgba, info.width, info.height);
     let app_handle = app.clone();
 
     let _tray = TrayIconBuilder::with_id("main-tray")
