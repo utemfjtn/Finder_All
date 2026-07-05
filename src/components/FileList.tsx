@@ -14,6 +14,65 @@ const ITEM_HEIGHT = 52;
 const BUFFER_ITEMS = 10;
 const VIRTUAL_THRESHOLD = 200;
 
+// 文件类型分类
+function getFileType(file: FileItem): string {
+  if (file.is_dir) return "dir";
+  const ext = file.name.split(".").pop()?.toLowerCase() || "";
+  if (["jpg", "jpeg", "png", "gif", "bmp", "svg", "webp", "ico", "tiff"].includes(ext)) return "image";
+  if (["mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "m4v"].includes(ext)) return "video";
+  if (["mp3", "wav", "flac", "aac", "ogg", "wma", "m4a"].includes(ext)) return "audio";
+  if (["zip", "rar", "7z", "tar", "gz", "bz2", "xz"].includes(ext)) return "archive";
+  if (["js", "ts", "jsx", "tsx", "py", "java", "c", "cpp", "rs", "go", "rb", "php", "swift", "kt", "sh", "bat", "css", "html", "json", "xml", "yml", "yaml", "toml"].includes(ext)) return "code";
+  if (["exe", "msi", "dmg", "pkg", "deb", "rpm", "app", "apk"].includes(ext)) return "app";
+  if (["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md", "rtf", "csv", "odt", "pages", "numbers", "key"].includes(ext)) return "doc";
+  return "file";
+}
+
+// 不同文件类型的 SVG 图标
+function FileTypeIcon({ type }: { type: string }) {
+  const iconMap: Record<string, React.ReactElement> = {
+    dir: (
+      <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
+    ),
+    image: (
+      <>
+        <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" />
+      </>
+    ),
+    video: (
+      <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" />
+    ),
+    audio: (
+      <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+    ),
+    archive: (
+      <path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6 9h-2v2h-2v-2H8v-2h2v-2h2v2h2v2z" />
+    ),
+    code: (
+      <path d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z" />
+    ),
+    app: (
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+    ),
+    doc: (
+      <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+    ),
+    file: (
+      <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+    ),
+  };
+
+  return (
+    <svg
+      className={`file-icon ${type === "dir" ? "dir" : "file"} type-${type}`}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+    >
+      {iconMap[type] || iconMap.file}
+    </svg>
+  );
+}
+
 const FileList: React.FC<FileListProps> = ({ files, selectedIndex, onSelect, onOpen, onFavoritesChange }) => {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: FileItem } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -151,17 +210,7 @@ const FileList: React.FC<FileListProps> = ({ files, selectedIndex, onSelect, onO
       onDoubleClick={() => onOpen(file)}
       onContextMenu={(e) => handleContextMenu(e, file)}
     >
-      <svg
-        className={`file-icon ${file.is_dir ? "dir" : "file"}`}
-        viewBox="0 0 24 24"
-        fill="currentColor"
-      >
-        {file.is_dir ? (
-          <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-        ) : (
-          <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
-        )}
-      </svg>
+      <FileTypeIcon type={getFileType(file)} />
       <div className="file-info">
         <div className="file-name">{file.name}</div>
         <div className="file-path">{file.path}</div>
