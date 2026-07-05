@@ -31,6 +31,14 @@ pub struct SearchOptions {
     pub use_regex: bool,
     #[serde(default)]
     pub match_path: bool,
+    #[serde(default)]
+    pub min_size: u64,
+    #[serde(default)]
+    pub max_size: u64,
+    #[serde(default)]
+    pub min_date: i64,
+    #[serde(default)]
+    pub max_date: i64,
 }
 
 fn default_file_type() -> String {
@@ -62,7 +70,7 @@ impl Default for IndexProgress {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexedFile {
     pub path: PathBuf,
     pub path_lower: String,

@@ -3,7 +3,16 @@ import SearchBar from "./components/SearchBar";
 import FileList from "./components/FileList";
 import Sidebar from "./components/Sidebar";
 import StatusBar from "./components/StatusBar";
-import { searchFiles, getIndexStatus, getIndexPaths, rebuildIndex, hideWindow } from "./api";
+import FilePreview from "./components/FilePreview";
+import {
+  searchFiles,
+  getIndexStatus,
+  getIndexPaths,
+  rebuildIndex,
+  hideWindow,
+  addSearchHistory,
+  getSearchHistory,
+} from "./api";
 import type { FileItem, IndexProgress, FileCategory } from "./types";
 import { CATEGORY_EXTENSIONS } from "./types";
 
@@ -18,7 +27,7 @@ function App() {
   const [sortDesc, setSortDesc] = useState(false);
   const [category, setCategory] = useState<FileCategory>("all");
   const [matchPath, setMatchPath] = useState(false);
-  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   const searchTimeoutRef = useRef<number | null>(null);
 
   const loadIndexPaths = useCallback(async () => {
@@ -81,12 +90,18 @@ function App() {
       }
       searchTimeoutRef.current = window.setTimeout(() => {
         performSearch(value, category, sortBy, sortDesc, matchPath);
-        if (value.trim() && !searchHistory.includes(value.trim())) {
-          setSearchHistory((prev) => [value.trim(), ...prev].slice(0, 20));
-        }
       }, 100);
     },
-    [performSearch, category, sortBy, sortDesc, matchPath, searchHistory]
+    [performSearch, category, sortBy, sortDesc, matchPath]
+  );
+
+  const handleHistorySelect = useCallback(
+    (historyQuery: string) => {
+      setQuery(historyQuery);
+      performSearch(historyQuery, category, sortBy, sortDesc, matchPath);
+      addSearchHistory(historyQuery);
+    },
+    [performSearch, category, sortBy, sortDesc, matchPath]
   );
 
   const handleSortChange = useCallback(
@@ -124,9 +139,19 @@ function App() {
         setSelectedIndex((prev) => Math.max(prev - 1, 0));
       } else if (e.key === "Enter" && results[selectedIndex]) {
         e.preventDefault();
+        if (query.trim()) {
+          addSearchHistory(query.trim());
+        }
         import("./api").then(({ openFile }) => openFile(results[selectedIndex].path));
+      } else if (e.key === " ") {
+        e.preventDefault();
+        if (results[selectedIndex] && !previewFile) {
+          setPreviewFile(results[selectedIndex]);
+        }
       } else if (e.key === "Escape") {
-        if (query) {
+        if (previewFile) {
+          setPreviewFile(null);
+        } else if (query) {
           setQuery("");
           setResults([]);
         } else {
@@ -134,7 +159,7 @@ function App() {
         }
       }
     },
-    [results, selectedIndex, query]
+    [results, selectedIndex, query, previewFile]
   );
 
   const handleRebuildIndex = useCallback(async () => {
@@ -173,15 +198,20 @@ function App() {
           onCategoryChange={handleCategoryChange}
           matchPath={matchPath}
           onMatchPathChange={handleMatchPathChange}
+          onHistorySelect={handleHistorySelect}
         />
         <FileList
           files={results}
           selectedIndex={selectedIndex}
           onSelect={setSelectedIndex}
-          onOpen={(file) => import("./api").then(({ openFile }) => openFile(file.path))}
+          onOpen={(file) => {
+            if (query.trim()) addSearchHistory(query.trim());
+            import("./api").then(({ openFile }) => openFile(file.path));
+          }}
         />
         <StatusBar indexProgress={indexProgress} resultCount={results.length} />
       </div>
+      <FilePreview file={previewFile} onClose={() => setPreviewFile(null)} />
     </div>
   );
 }

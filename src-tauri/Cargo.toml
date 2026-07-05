@@ -25,6 +25,10 @@ rayon = "1.10"
 once_cell = "1.19"
 parking_lot = "0.12"
 regex = "1"
+bincode = "1.3"
+dirs = "5"
+notify = "6"
+encoding_rs = "0.8"
 
 [features]
 default = ["custom-protocol"]

@@ -17,6 +17,10 @@ export interface SearchOptions {
   path_filter?: string;
   use_regex?: boolean;
   match_path?: boolean;
+  min_size?: number;
+  max_size?: number;
+  min_date?: number;
+  max_date?: number;
 }
 
 export interface IndexProgress {

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { FileCategory, CATEGORY_EXTENSIONS } from "../types";
+import { getSearchHistory, removeSearchHistoryItem } from "../api";
 
 interface SearchBarProps {
   query: string;
@@ -12,6 +13,7 @@ interface SearchBarProps {
   onCategoryChange: (cat: FileCategory) => void;
   matchPath: boolean;
   onMatchPathChange: (v: boolean) => void;
+  onHistorySelect?: (query: string) => void;
 }
 
 const sortOptions = [
@@ -45,54 +47,121 @@ const SearchBar: React.FC<SearchBarProps> = ({
   onCategoryChange,
   matchPath,
   onMatchPathChange,
+  onHistorySelect,
 }) => {
   const [showSortMenu, setShowSortMenu] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const sortMenuRef = useRef<HTMLDivElement>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
         setShowSortMenu(false);
       }
+      if (
+        historyRef.current &&
+        !historyRef.current.contains(e.target as Node) &&
+        inputRef.current &&
+        !inputRef.current.contains(e.target as Node)
+      ) {
+        setShowHistory(false);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (showHistory) {
+      setHistory(getSearchHistory());
+    }
+  }, [showHistory]);
+
   const currentSort = sortOptions.find((s) => s.value === sortBy)?.label || "相关性";
+
+  const filteredHistory = query
+    ? history.filter((h) => h.toLowerCase().includes(query.toLowerCase()))
+    : history;
 
   return (
     <div className="search-container">
-      <div className="search-bar">
-        <svg className="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="11" cy="11" r="8" />
-          <path d="m21 21-4.35-4.35" />
-        </svg>
-        <input
-          ref={inputRef}
-          type="text"
-          className="search-input"
-          placeholder="搜索文件和文件夹... (支持 * ? 通配符)"
-          value={query}
-          onChange={(e) => onSearch(e.target.value)}
-          autoFocus
-        />
-        {query && (
-          <button
-            className="search-clear"
-            onClick={() => onSearch("")}
-            title="清除"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+      <div className="search-bar-wrapper" ref={historyRef}>
+        <div className="search-bar">
+          <svg className="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.35-4.35" />
+          </svg>
+          <input
+            ref={inputRef}
+            type="text"
+            className="search-input"
+            placeholder="搜索文件和文件夹... (支持 * ? 通配符)"
+            value={query}
+            onChange={(e) => onSearch(e.target.value)}
+            onFocus={() => setShowHistory(true)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown" && showHistory && filteredHistory.length > 0) {
+                e.preventDefault();
+                onHistorySelect?.(filteredHistory[0]);
+                setShowHistory(false);
+              }
+            }}
+            autoFocus
+          />
+          {query && (
+            <button
+              className="search-clear"
+              onClick={() => onSearch("")}
+              title="清除"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
+          <span className="search-info">
+            {resultCount} 个结果
+          </span>
+        </div>
+
+        {showHistory && filteredHistory.length > 0 && (
+          <div className="search-history-dropdown">
+            <div className="search-history-header">
+              <span>搜索历史</span>
+            </div>
+            {filteredHistory.slice(0, 8).map((item, idx) => (
+              <div
+                key={idx}
+                className="search-history-item"
+                onClick={() => {
+                  onHistorySelect?.(item);
+                  setShowHistory(false);
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="history-icon">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                <span className="history-text">{item}</span>
+                <button
+                  className="history-remove"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeSearchHistoryItem(item);
+                    setHistory(getSearchHistory());
+                  }}
+                  title="移除"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
         )}
-        <span className="search-info">
-          {resultCount} 个结果
-        </span>
       </div>
 
       <div className="search-toolbar">

@@ -12,22 +12,88 @@ use std::time::Instant;
 use walkdir::WalkDir;
 
 pub struct FileIndex {
-    files: RwLock<Vec<IndexedFile>>,
+    pub files: Arc<RwLock<Vec<IndexedFile>>>,
     index_paths: RwLock<Vec<String>>,
     progress: RwLock<IndexProgress>,
     is_indexing: RwLock<bool>,
     matcher: SkimMatcherV2,
+    cache_dirty: RwLock<bool>,
+}
+
+fn cache_file_path() -> Option<PathBuf> {
+    if let Some(data_dir) = dirs::data_local_dir() {
+        let dir = data_dir.join("FinderAll");
+        std::fs::create_dir_all(&dir).ok()?;
+        Some(dir.join("index_cache.bin"))
+    } else {
+        None
+    }
 }
 
 impl FileIndex {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
-            files: RwLock::new(Vec::new()),
+            files: Arc::new(RwLock::new(Vec::new())),
             index_paths: RwLock::new(Vec::new()),
             progress: RwLock::new(IndexProgress::default()),
             is_indexing: RwLock::new(false),
             matcher: SkimMatcherV2::default().ignore_case(),
+            cache_dirty: RwLock::new(false),
         })
+    }
+
+    pub fn mark_cache_dirty(&self) {
+        *self.cache_dirty.write() = true;
+    }
+
+    pub fn save_cache_if_dirty(&self) -> bool {
+        let mut dirty = self.cache_dirty.write();
+        if *dirty {
+            *dirty = false;
+            self.save_cache()
+        } else {
+            false
+        }
+    }
+
+    pub fn load_from_cache(self: &Arc<Self>) -> bool {
+        if let Some(cache_path) = cache_file_path() {
+            if cache_path.exists() {
+                if let Ok(data) = std::fs::read(&cache_path) {
+                    let result: Result<Vec<IndexedFile>, _> = bincode::deserialize(&data);
+                    if let Ok(files) = result {
+                        let count = files.len();
+                        {
+                            let mut f = self.files.write();
+                            *f = files;
+                        }
+                        {
+                            let mut p = self.progress.write();
+                            p.done = true;
+                            p.indexed = count;
+                            p.total = count;
+                            p.total_files = count;
+                        }
+                        println!("Loaded {} files from cache", count);
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    pub fn save_cache(&self) -> bool {
+        if let Some(cache_path) = cache_file_path() {
+            let files = self.files.read();
+            if let Ok(data) = bincode::serialize(&*files) {
+                if std::fs::write(&cache_path, data).is_ok() {
+                    println!("Saved {} files to cache", files.len());
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     pub fn add_index_path(self: &Arc<Self>, path: String) {
@@ -84,6 +150,7 @@ impl FileIndex {
             self_arc.do_indexing(paths);
             let elapsed = start.elapsed();
             println!("Indexing completed in {:?}", elapsed);
+            self_arc.save_cache();
             let mut indexing = self_arc.is_indexing.write();
             *indexing = false;
         });
@@ -287,6 +354,19 @@ impl FileIndex {
                     if !ext_set.contains(&f.extension) {
                         return None;
                     }
+                }
+
+                if options.min_size > 0 && f.size < options.min_size {
+                    return None;
+                }
+                if options.max_size > 0 && f.size > options.max_size {
+                    return None;
+                }
+                if options.min_date > 0 && f.modified < options.min_date {
+                    return None;
+                }
+                if options.max_date > 0 && f.modified > options.max_date {
+                    return None;
                 }
 
                 if !path_filter_lower.is_empty() {

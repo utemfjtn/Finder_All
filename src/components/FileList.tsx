@@ -41,6 +41,26 @@ const FileList: React.FC<FileListProps> = ({ files, selectedIndex, onSelect, onO
     setContextMenu(null);
   };
 
+  const handleDragStart = (e: React.DragEvent, file: FileItem) => {
+    e.dataTransfer.effectAllowed = "copyMove";
+    e.dataTransfer.setData("text/plain", file.path);
+    e.dataTransfer.setData("text/uri-list", `file://${file.path}`);
+
+    if ("startDrag" in e.dataTransfer) {
+      return;
+    }
+
+    try {
+      const dragImage = document.createElement("div");
+      dragImage.textContent = file.name;
+      dragImage.style.cssText =
+        "position: absolute; top: -1000px; padding: 4px 8px; background: rgba(30,30,30,0.9); color: white; border-radius: 4px; font-size: 12px;";
+      document.body.appendChild(dragImage);
+      e.dataTransfer.setDragImage(dragImage, 10, 10);
+      setTimeout(() => document.body.removeChild(dragImage), 0);
+    } catch {}
+  };
+
   if (files.length === 0) {
     return (
       <div className="file-list">
@@ -65,6 +85,8 @@ const FileList: React.FC<FileListProps> = ({ files, selectedIndex, onSelect, onO
           key={file.path}
           ref={index === selectedIndex ? selectedRef : null}
           className={`file-item ${index === selectedIndex ? "selected" : ""}`}
+          draggable
+          onDragStart={(e) => handleDragStart(e, file)}
           onClick={() => {
             onSelect(index);
           }}

@@ -1,5 +1,6 @@
 mod index;
 mod models;
+mod watcher;
 
 use index::FileIndex;
 use models::*;
@@ -11,15 +12,18 @@ use tauri::{
     AppHandle, Manager, Runtime, State, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, ShortcutState};
+use watcher::FileWatcher;
 
 struct AppState {
     file_index: Arc<FileIndex>,
+    file_watcher: Arc<FileWatcher>,
 }
 
 #[tauri::command]
 fn start_indexing(state: State<AppState>, paths: Vec<String>) -> Result<(), String> {
     for path in &paths {
         state.file_index.add_index_path(path.clone());
+        state.file_watcher.add_path(path);
     }
     state.file_index.start_indexing();
     Ok(())
@@ -94,7 +98,8 @@ fn get_root_dirs() -> Result<Vec<String>, String> {
 
 #[tauri::command]
 fn add_index_path(state: State<AppState>, path: String) -> Result<(), String> {
-    state.file_index.add_index_path(path);
+    state.file_index.add_index_path(path.clone());
+    state.file_watcher.add_path(&path);
     state.file_index.start_indexing();
     Ok(())
 }
@@ -138,6 +143,23 @@ fn show_window(app: AppHandle) -> Result<(), String> {
         window.set_focus().map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[tauri::command]
+fn read_file_text(path: String, max_bytes: Option<u64>) -> Result<String, String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+    let metadata = file.metadata().map_err(|e| e.to_string())?;
+    if metadata.is_dir() {
+        return Err("Is a directory".to_string());
+    }
+    let max = max_bytes.unwrap_or(10240) as usize;
+    let mut buffer = vec![0u8; max];
+    let bytes_read = file.read(&mut buffer).map_err(|e| e.to_string())?;
+    buffer.truncate(bytes_read);
+
+    let (text, _, _) = encoding_rs::UTF_8.decode(&buffer);
+    Ok(text.to_string())
 }
 
 fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::Error>> {
@@ -213,12 +235,16 @@ fn setup_global_shortcut<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn s
 
 fn main() {
     let file_index = FileIndex::new();
+    let file_watcher = FileWatcher::new();
+
+    let cache_loaded = file_index.load_from_cache();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard::init())
         .manage(AppState {
             file_index: Arc::clone(&file_index),
+            file_watcher: Arc::clone(&file_watcher),
         })
         .invoke_handler(tauri::generate_handler![
             start_indexing,
@@ -234,6 +260,7 @@ fn main() {
             copy_path,
             hide_window,
             show_window,
+            read_file_text,
         ])
         .setup(|app| {
             setup_tray(app.handle())?;
@@ -244,9 +271,21 @@ fn main() {
             if !default_paths.is_empty() {
                 for path in &default_paths {
                     state.file_index.add_index_path(path.clone());
+                    state.file_watcher.add_path(path);
                 }
-                state.file_index.start_indexing();
+                if !cache_loaded {
+                    state.file_index.start_indexing();
+                }
             }
+
+            let index_arc = Arc::clone(&state.file_index);
+            let watcher_arc = Arc::clone(&state.file_watcher);
+            let files_arc = Arc::clone(&state.file_index.files);
+
+            let app_handle = app.handle().clone();
+            let _ = watcher_arc.start(files_arc, move || {
+                index_arc.mark_cache_dirty();
+            });
 
             if let Some(window) = app.get_webview_window("main") {
                 window.on_window_event(move |event| {
@@ -258,6 +297,15 @@ fn main() {
                     }
                 });
             }
+
+            let app_handle_for_save = app.handle().clone();
+            let index_arc_for_save = Arc::clone(&state.file_index);
+            let _ = std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(60));
+                    index_arc_for_save.save_cache_if_dirty();
+                }
+            });
 
             Ok(())
         })

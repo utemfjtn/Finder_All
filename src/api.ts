@@ -73,3 +73,44 @@ export function formatDate(timestamp: number): string {
     minute: "2-digit",
   });
 }
+
+const SEARCH_HISTORY_KEY = "finder_search_history";
+const MAX_HISTORY = 50;
+
+export function getSearchHistory(): string[] {
+  try {
+    const data = localStorage.getItem(SEARCH_HISTORY_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function addSearchHistory(query: string): void {
+  if (!query.trim()) return;
+  try {
+    const history = getSearchHistory();
+    const filtered = history.filter((q) => q !== query);
+    filtered.unshift(query);
+    const trimmed = filtered.slice(0, MAX_HISTORY);
+    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(trimmed));
+  } catch {}
+}
+
+export function clearSearchHistory(): void {
+  try {
+    localStorage.removeItem(SEARCH_HISTORY_KEY);
+  } catch {}
+}
+
+export function removeSearchHistoryItem(query: string): void {
+  try {
+    const history = getSearchHistory();
+    const filtered = history.filter((q) => q !== query);
+    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(filtered));
+  } catch {}
+}
+
+export async function readFileText(path: string, maxBytes: number = 10240): Promise<string> {
+  return invoke("read_file_text", { path, maxBytes });
+}
