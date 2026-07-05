@@ -3,23 +3,24 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::channel;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
 pub struct FileWatcher {
     watcher: Option<RecommendedWatcher>,
-    rx: Option<Receiver<notify::Result<notify::Event>>>,
     watched_paths: RwLock<Vec<String>>,
     is_running: RwLock<bool>,
 }
+
+unsafe impl Send for FileWatcher {}
+unsafe impl Sync for FileWatcher {}
 
 impl FileWatcher {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             watcher: None,
-            rx: None,
             watched_paths: RwLock::new(Vec::new()),
             is_running: RwLock::new(false),
         })
@@ -58,13 +59,11 @@ impl FileWatcher {
         }
 
         self_arc.watcher = Some(watcher);
-        self_arc.rx = Some(rx);
 
         let self_arc2 = Arc::clone(self_arc);
         let files_arc = Arc::clone(&files);
 
         thread::spawn(move || {
-            let rx = self_arc2.rx.as_ref().unwrap();
             let mut pending_changes = HashSet::new();
             let mut last_flush = std::time::Instant::now();
             let debounce = Duration::from_millis(500);

@@ -122,9 +122,44 @@ fn rebuild_index(state: State<AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn copy_path(path: String, app: AppHandle) -> Result<(), String> {
-    use tauri_plugin_clipboard::ClipboardExt;
-    app.clipboard().write_text(&path).map_err(|e| e.to_string())?;
+fn copy_path(path: String) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        let _ = Command::new("xclip")
+            .args(["-selection", "clipboard"])
+            .arg(&path)
+            .status();
+        let _ = Command::new("wl-copy")
+            .arg(&path)
+            .status();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        use std::io::Write;
+        let mut child = Command::new("pbcopy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin.write_all(path.as_bytes()).map_err(|e| e.to_string())?;
+        }
+        let _ = child.wait();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        let mut child = Command::new("clip")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        if let Some(stdin) = child.stdin.as_mut() {
+            use std::io::Write;
+            stdin.write_all(path.as_bytes()).map_err(|e| e.to_string())?;
+        }
+        let _ = child.wait();
+    }
     Ok(())
 }
 
@@ -241,7 +276,6 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_clipboard::init())
         .manage(AppState {
             file_index: Arc::clone(&file_index),
             file_watcher: Arc::clone(&file_watcher),

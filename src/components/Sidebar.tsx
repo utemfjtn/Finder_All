@@ -1,5 +1,16 @@
-import React, { useState } from "react";
-import { addIndexPath, removeIndexPath } from "../api";
+import React, { useState, useEffect } from "react";
+import {
+  addIndexPath,
+  removeIndexPath,
+  getFavorites,
+  removeFavorite,
+  getRecentFiles,
+  removeRecentFile,
+  clearRecentFiles,
+  openFile,
+  type FavoriteItem,
+  type RecentItem,
+} from "../api";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -7,6 +18,8 @@ interface SidebarProps {
   indexPaths: string[];
   onPathsChange: () => void;
   onRebuildIndex: () => void;
+  onFavoriteClick?: (path: string) => void;
+  onRecentClick?: (path: string) => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -15,9 +28,26 @@ const Sidebar: React.FC<SidebarProps> = ({
   indexPaths,
   onPathsChange,
   onRebuildIndex,
+  onFavoriteClick,
+  onRecentClick,
 }) => {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newPath, setNewPath] = useState("");
+  const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
+  const [recentFiles, setRecentFiles] = useState<RecentItem[]>([]);
+
+  useEffect(() => {
+    setFavorites(getFavorites());
+    setRecentFiles(getRecentFiles());
+  }, []);
+
+  const refreshFavorites = () => {
+    setFavorites(getFavorites());
+  };
+
+  const refreshRecent = () => {
+    setRecentFiles(getRecentFiles());
+  };
 
   const handleAddPath = async () => {
     if (newPath.trim()) {
@@ -41,6 +71,44 @@ const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
+  const handleRemoveFavorite = (e: React.MouseEvent, path: string) => {
+    e.stopPropagation();
+    removeFavorite(path);
+    refreshFavorites();
+  };
+
+  const handleRemoveRecent = (e: React.MouseEvent, path: string) => {
+    e.stopPropagation();
+    removeRecentFile(path);
+    refreshRecent();
+  };
+
+  const handleClearRecent = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    clearRecentFiles();
+    refreshRecent();
+  };
+
+  const handleFavoriteClick = async (item: FavoriteItem) => {
+    if (onFavoriteClick) {
+      onFavoriteClick(item.path);
+    } else {
+      try {
+        await openFile(item.path);
+      } catch {}
+    }
+  };
+
+  const handleRecentClick = async (item: RecentItem) => {
+    if (onRecentClick) {
+      onRecentClick(item.path);
+    } else {
+      try {
+        await openFile(item.path);
+      } catch {}
+    }
+  };
+
   return (
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
       <div className="sidebar-header">
@@ -57,6 +125,87 @@ const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <div className="sidebar-content">
+        {!collapsed && favorites.length > 0 && (
+          <div className="sidebar-section">
+            <div className="sidebar-section-title">
+              <span>⭐ 收藏</span>
+            </div>
+            {favorites.slice(0, 10).map((item) => (
+              <div
+                key={item.path}
+                className="sidebar-item"
+                title={item.path}
+                onClick={() => handleFavoriteClick(item)}
+              >
+                <svg
+                  className="sidebar-item-icon favorite-star"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+                </svg>
+                <span className="sidebar-item-name">{item.name}</span>
+                <button
+                  className="sidebar-item-remove"
+                  onClick={(e) => handleRemoveFavorite(e, item.path)}
+                  title="移除收藏"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!collapsed && recentFiles.length > 0 && (
+          <div className="sidebar-section">
+            <div className="sidebar-section-title">
+              <span>🕐 最近打开</span>
+              <button
+                onClick={handleClearRecent}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--text-muted)",
+                  fontSize: "11px",
+                  cursor: "pointer",
+                }}
+                title="清空历史"
+              >
+                清空
+              </button>
+            </div>
+            {recentFiles.slice(0, 10).map((item) => (
+              <div
+                key={item.path}
+                className="sidebar-item"
+                title={item.path}
+                onClick={() => handleRecentClick(item)}
+              >
+                <svg
+                  className="sidebar-item-icon"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  {item.is_dir ? (
+                    <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
+                  ) : (
+                    <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+                  )}
+                </svg>
+                <span className="sidebar-item-name">{item.name}</span>
+                <button
+                  className="sidebar-item-remove"
+                  onClick={(e) => handleRemoveRecent(e, item.path)}
+                  title="移除"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="sidebar-section">
           <div className="sidebar-section-label">索引目录</div>
           {indexPaths.map((path) => (

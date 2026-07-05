@@ -14,6 +14,7 @@ interface SearchBarProps {
   matchPath: boolean;
   onMatchPathChange: (v: boolean) => void;
   onHistorySelect?: (query: string) => void;
+  onHelpClick?: () => void;
 }
 
 const sortOptions = [
@@ -48,6 +49,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
   matchPath,
   onMatchPathChange,
   onHistorySelect,
+  onHelpClick,
 }) => {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -126,6 +128,13 @@ const SearchBar: React.FC<SearchBarProps> = ({
           <span className="search-info">
             {resultCount} 个结果
           </span>
+          <button
+            className="search-help-btn"
+            onClick={onHelpClick}
+            title="帮助 (F1)"
+          >
+            ?
+          </button>
         </div>
 
         {showHistory && filteredHistory.length > 0 && (

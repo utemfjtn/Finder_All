@@ -4,6 +4,7 @@ import FileList from "./components/FileList";
 import Sidebar from "./components/Sidebar";
 import StatusBar from "./components/StatusBar";
 import FilePreview from "./components/FilePreview";
+import HelpPanel from "./components/HelpPanel";
 import {
   searchFiles,
   getIndexStatus,
@@ -11,6 +12,11 @@ import {
   rebuildIndex,
   hideWindow,
   addSearchHistory,
+  openFile,
+  addRecentFile,
+  addFavorite,
+  isFavorite,
+  removeFavorite,
 } from "./api";
 import type { FileItem, IndexProgress, FileCategory } from "./types";
 import { CATEGORY_EXTENSIONS } from "./types";
@@ -27,7 +33,13 @@ function App() {
   const [category, setCategory] = useState<FileCategory>("all");
   const [matchPath, setMatchPath] = useState(false);
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
+  const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
   const searchTimeoutRef = useRef<number | null>(null);
+
+  const refreshSidebar = () => {
+    setSidebarRefreshKey((prev) => prev + 1);
+  };
 
   const loadIndexPaths = useCallback(async () => {
     try {
@@ -128,8 +140,49 @@ function App() {
     [performSearch, query, category, sortBy, sortDesc]
   );
 
+  const handleOpenFile = useCallback(
+    async (file: FileItem) => {
+      if (query.trim()) {
+        addSearchHistory(query.trim());
+      }
+      addRecentFile(file);
+      refreshSidebar();
+      try {
+        await openFile(file.path);
+      } catch (e) {
+        console.error("Failed to open file:", e);
+      }
+    },
+    [query]
+  );
+
+  const handleToggleFavorite = useCallback(() => {
+    if (results[selectedIndex]) {
+      const file = results[selectedIndex];
+      if (isFavorite(file.path)) {
+        removeFavorite(file.path);
+      } else {
+        addFavorite(file);
+      }
+      refreshSidebar();
+    }
+  }, [results, selectedIndex]);
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (e.key === "F1") {
+        e.preventDefault();
+        setShowHelp(true);
+        return;
+      }
+
+      if (showHelp) {
+        if (e.key === "Escape") {
+          setShowHelp(false);
+        }
+        return;
+      }
+
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setSelectedIndex((prev) => Math.min(prev + 1, results.length - 1));
@@ -138,14 +191,13 @@ function App() {
         setSelectedIndex((prev) => Math.max(prev - 1, 0));
       } else if (e.key === "Enter" && results[selectedIndex]) {
         e.preventDefault();
-        if (query.trim()) {
-          addSearchHistory(query.trim());
-        }
-        import("./api").then(({ openFile }) => openFile(results[selectedIndex].path));
+        handleOpenFile(results[selectedIndex]);
       } else if (e.key === " ") {
         e.preventDefault();
         if (results[selectedIndex] && !previewFile) {
           setPreviewFile(results[selectedIndex]);
+        } else if (previewFile) {
+          setPreviewFile(null);
         }
       } else if (e.key === "Escape") {
         if (previewFile) {
@@ -156,9 +208,23 @@ function App() {
         } else {
           hideWindow();
         }
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "d") {
+        e.preventDefault();
+        handleToggleFavorite();
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "o" && results[selectedIndex]) {
+        e.preventDefault();
+        handleOpenFile(results[selectedIndex]);
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "l" && results[selectedIndex]) {
+        e.preventDefault();
+        import("./api").then(({ openFileLocation }) =>
+          openFileLocation(results[selectedIndex].path)
+        );
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        document.querySelector<HTMLInputElement>(".search-input")?.focus();
       }
     },
-    [results, selectedIndex, query, previewFile]
+    [results, selectedIndex, query, previewFile, showHelp, handleOpenFile, handleToggleFavorite]
   );
 
   const handleRebuildIndex = useCallback(async () => {
@@ -177,8 +243,9 @@ function App() {
   }, [loadIndexPaths, loadIndexStatus]);
 
   return (
-    <div className="app" onKeyDown={handleKeyDown}>
+    <div className="app" onKeyDown={handleKeyDown} tabIndex={0}>
       <Sidebar
+        key={sidebarRefreshKey}
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
         indexPaths={indexPaths}
@@ -198,19 +265,19 @@ function App() {
           matchPath={matchPath}
           onMatchPathChange={handleMatchPathChange}
           onHistorySelect={handleHistorySelect}
+          onHelpClick={() => setShowHelp(true)}
         />
         <FileList
           files={results}
           selectedIndex={selectedIndex}
           onSelect={setSelectedIndex}
-          onOpen={(file) => {
-            if (query.trim()) addSearchHistory(query.trim());
-            import("./api").then(({ openFile }) => openFile(file.path));
-          }}
+          onOpen={handleOpenFile}
+          onFavoritesChange={refreshSidebar}
         />
         <StatusBar indexProgress={indexProgress} resultCount={results.length} />
       </div>
       <FilePreview file={previewFile} onClose={() => setPreviewFile(null)} />
+      {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
     </div>
   );
 }

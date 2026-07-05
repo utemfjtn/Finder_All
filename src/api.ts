@@ -114,3 +114,88 @@ export function removeSearchHistoryItem(query: string): void {
 export async function readFileText(path: string, maxBytes: number = 10240): Promise<string> {
   return invoke("read_file_text", { path, maxBytes });
 }
+
+const FAVORITES_KEY = "finder_favorites";
+const MAX_FAVORITES = 100;
+
+export interface FavoriteItem {
+  path: string;
+  name: string;
+  is_dir: boolean;
+  added_at: number;
+}
+
+export function getFavorites(): FavoriteItem[] {
+  try {
+    const data = localStorage.getItem(FAVORITES_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function addFavorite(file: { path: string; name: string; is_dir: boolean }): void {
+  try {
+    const favorites = getFavorites();
+    const filtered = favorites.filter((f) => f.path !== file.path);
+    filtered.unshift({ ...file, added_at: Date.now() });
+    const trimmed = filtered.slice(0, MAX_FAVORITES);
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(trimmed));
+  } catch {}
+}
+
+export function removeFavorite(path: string): void {
+  try {
+    const favorites = getFavorites();
+    const filtered = favorites.filter((f) => f.path !== path);
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(filtered));
+  } catch {}
+}
+
+export function isFavorite(path: string): boolean {
+  const favorites = getFavorites();
+  return favorites.some((f) => f.path === path);
+}
+
+const RECENT_KEY = "finder_recent_files";
+const MAX_RECENT = 50;
+
+export interface RecentItem {
+  path: string;
+  name: string;
+  is_dir: boolean;
+  opened_at: number;
+}
+
+export function getRecentFiles(): RecentItem[] {
+  try {
+    const data = localStorage.getItem(RECENT_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function addRecentFile(file: { path: string; name: string; is_dir: boolean }): void {
+  try {
+    const recent = getRecentFiles();
+    const filtered = recent.filter((f) => f.path !== file.path);
+    filtered.unshift({ ...file, opened_at: Date.now() });
+    const trimmed = filtered.slice(0, MAX_RECENT);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(trimmed));
+  } catch {}
+}
+
+export function clearRecentFiles(): void {
+  try {
+    localStorage.removeItem(RECENT_KEY);
+  } catch {}
+}
+
+export function removeRecentFile(path: string): void {
+  try {
+    const recent = getRecentFiles();
+    const filtered = recent.filter((f) => f.path !== path);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(filtered));
+  } catch {}
+}
