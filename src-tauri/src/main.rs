@@ -11,7 +11,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager, Runtime, State, WindowEvent,
 };
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, ShortcutState};
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use watcher::FileWatcher;
 
 struct AppState {
@@ -204,10 +204,13 @@ fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::
 
     let menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
 
-    let _tray = TrayIconBuilder::new()
-        .icon(Image::from_bytes(include_bytes!("../icons/icon.png")))
+    let icon = Image::new(include_bytes!("../icons/icon.png").to_vec());
+    let app_handle = app.clone();
+
+    let _tray = TrayIconBuilder::with_id("main-tray")
+        .icon(icon)
         .menu(&menu)
-        .menu_on_event(|app, event| {
+        .on_menu_event(move |app, event| {
             match event.id.as_ref() {
                 "show" => {
                     if let Some(window) = app.get_webview_window("main") {
@@ -226,11 +229,14 @@ fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::
                 _ => {}
             }
         })
-        .on_tray_icon_event(|tray, event| {
-            if event.event == TrayIconEvent::Click {
-                if event.button == MouseButton::Left
-                    && event.button_state == MouseButtonState::Up
-                {
+        .on_tray_icon_event(move |tray, event| {
+            if let TrayIconEvent::Click {
+                button,
+                button_state,
+                ..
+            } = event
+            {
+                if button == MouseButton::Left && button_state == MouseButtonState::Up {
                     let app = tray.app_handle();
                     if let Some(window) = app.get_webview_window("main") {
                         if window.is_visible().unwrap_or(false) {
@@ -243,17 +249,15 @@ fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::
                 }
             }
         })
-        .build(app)?;
+        .build(&app_handle)?;
 
     Ok(())
 }
 
 fn setup_global_shortcut<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::Error>> {
-    let shortcut = app.global_shortcut();
-
     let app_handle = app.clone();
-    shortcut.on_shortcut("CommandOrControl+Shift+F", |_app, _shortcut, event| {
-        if event.state == ShortcutState::Pressed {
+    app.global_shortcut().on_shortcut("CommandOrControl+Shift+F", move |_app, _shortcut, event| {
+        if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
             if let Some(window) = app_handle.get_webview_window("main") {
                 if window.is_visible().unwrap_or(false) {
                     let _ = window.hide();
@@ -322,12 +326,11 @@ fn main() {
             });
 
             if let Some(window) = app.get_webview_window("main") {
+                let window_clone = window.clone();
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
-                        if let Some(window) = api.window().try_webview_window() {
-                            let _ = window.hide();
-                        }
+                        let _ = window_clone.hide();
                     }
                 });
             }

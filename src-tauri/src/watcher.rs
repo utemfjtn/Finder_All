@@ -60,7 +60,7 @@ impl FileWatcher {
 
         self_arc.watcher = Some(watcher);
 
-        let self_arc2 = Arc::clone(self_arc);
+        let self_arc2 = Arc::clone(&self_arc);
         let files_arc = Arc::clone(&files);
 
         thread::spawn(move || {
