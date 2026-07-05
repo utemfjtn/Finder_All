@@ -4,8 +4,13 @@ mod models;
 use index::FileIndex;
 use models::*;
 use std::sync::Arc;
-use tauri::Manager;
-use tauri::State;
+use tauri::{
+    image::Image,
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Manager, Runtime, State, WindowEvent,
+};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, ShortcutState};
 
 struct AppState {
     file_index: Arc<FileIndex>,
@@ -111,10 +116,107 @@ fn rebuild_index(state: State<AppState>) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn copy_path(path: String, app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_clipboard::ClipboardExt;
+    app.clipboard().write_text(&path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn hide_window(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn show_window(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::Error>> {
+    let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
+    let hide_item = MenuItem::with_id(app, "hide", "隐藏窗口", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+
+    let menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
+
+    let _tray = TrayIconBuilder::new()
+        .icon(Image::from_bytes(include_bytes!("../icons/icon.png")))
+        .menu(&menu)
+        .menu_on_event(|app, event| {
+            match event.id.as_ref() {
+                "show" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+                "hide" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                    }
+                }
+                "quit" => {
+                    app.exit(0);
+                }
+                _ => {}
+            }
+        })
+        .on_tray_icon_event(|tray, event| {
+            if event.event == TrayIconEvent::Click {
+                if event.button == MouseButton::Left
+                    && event.button_state == MouseButtonState::Up
+                {
+                    let app = tray.app_handle();
+                    if let Some(window) = app.get_webview_window("main") {
+                        if window.is_visible().unwrap_or(false) {
+                            let _ = window.hide();
+                        } else {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                }
+            }
+        })
+        .build(app)?;
+
+    Ok(())
+}
+
+fn setup_global_shortcut<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::Error>> {
+    let shortcut = app.global_shortcut();
+
+    let app_handle = app.clone();
+    shortcut.on_shortcut("CommandOrControl+Shift+F", |_app, _shortcut, event| {
+        if event.state == ShortcutState::Pressed {
+            if let Some(window) = app_handle.get_webview_window("main") {
+                if window.is_visible().unwrap_or(false) {
+                    let _ = window.hide();
+                } else {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        }
+    })?;
+
+    Ok(())
+}
+
 fn main() {
     let file_index = FileIndex::new();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_clipboard::init())
         .manage(AppState {
             file_index: Arc::clone(&file_index),
         })
@@ -129,8 +231,14 @@ fn main() {
             remove_index_path,
             get_index_paths,
             rebuild_index,
+            copy_path,
+            hide_window,
+            show_window,
         ])
         .setup(|app| {
+            setup_tray(app.handle())?;
+            setup_global_shortcut(app.handle())?;
+
             let state = app.state::<AppState>();
             let default_paths = get_root_dirs().unwrap_or_default();
             if !default_paths.is_empty() {
@@ -139,6 +247,18 @@ fn main() {
                 }
                 state.file_index.start_indexing();
             }
+
+            if let Some(window) = app.get_webview_window("main") {
+                window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        if let Some(window) = api.window().try_webview_window() {
+                            let _ = window.hide();
+                        }
+                    }
+                });
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())

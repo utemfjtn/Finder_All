@@ -23,6 +23,18 @@ export async function openFileLocation(path: string): Promise<void> {
   return invoke("open_file_location", { path });
 }
 
+export async function copyPath(path: string): Promise<void> {
+  return invoke("copy_path", { path });
+}
+
+export async function hideWindow(): Promise<void> {
+  return invoke("hide_window");
+}
+
+export async function showWindow(): Promise<void> {
+  return invoke("show_window");
+}
+
 export async function getRootDirs(): Promise<string[]> {
   return invoke("get_root_dirs");
 }
