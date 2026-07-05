@@ -1,0 +1,63 @@
+import { invoke } from "@tauri-apps/api/core";
+import type { FileItem, SearchOptions, IndexProgress } from "./types";
+
+export async function startIndexing(paths: string[]): Promise<void> {
+  return invoke("start_indexing", { paths });
+}
+
+export async function searchFiles(
+  options: SearchOptions
+): Promise<FileItem[]> {
+  return invoke("search_files", { options });
+}
+
+export async function getIndexStatus(): Promise<IndexProgress> {
+  return invoke("get_index_status");
+}
+
+export async function openFile(path: string): Promise<void> {
+  return invoke("open_file", { path });
+}
+
+export async function openFileLocation(path: string): Promise<void> {
+  return invoke("open_file_location", { path });
+}
+
+export async function getRootDirs(): Promise<string[]> {
+  return invoke("get_root_dirs");
+}
+
+export async function addIndexPath(path: string): Promise<void> {
+  return invoke("add_index_path", { path });
+}
+
+export async function removeIndexPath(path: string): Promise<void> {
+  return invoke("remove_index_path", { path });
+}
+
+export async function getIndexPaths(): Promise<string[]> {
+  return invoke("get_index_paths");
+}
+
+export async function rebuildIndex(): Promise<void> {
+  return invoke("rebuild_index");
+}
+
+export function formatSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+}
+
+export function formatDate(timestamp: number): string {
+  const date = new Date(timestamp * 1000);
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
