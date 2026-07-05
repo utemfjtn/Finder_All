@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { FileCategory, CATEGORY_EXTENSIONS } from "../types";
+import type { FileCategory } from "../types";
 import { getSearchHistory, removeSearchHistoryItem } from "../api";
 
 interface SearchBarProps {

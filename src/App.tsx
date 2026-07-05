@@ -11,7 +11,6 @@ import {
   rebuildIndex,
   hideWindow,
   addSearchHistory,
-  getSearchHistory,
 } from "./api";
 import type { FileItem, IndexProgress, FileCategory } from "./types";
 import { CATEGORY_EXTENSIONS } from "./types";
