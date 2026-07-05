@@ -140,12 +140,26 @@ jobs:
 
       - name: Create Universal Binary
         run: |
-          APP_NAME="Finder All"
+          APP_NAME="Finder_All"
           VERSION="${GITHUB_REF_NAME#v}"
           ARM_APP="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/${APP_NAME}.app"
           X64_APP="src-tauri/target/x86_64-apple-darwin/release/bundle/macos/${APP_NAME}.app"
           UNIVERSAL_DIR="src-tauri/target/universal-macos/release/bundle/macos"
           UNIVERSAL_APP="${UNIVERSAL_DIR}/${APP_NAME}.app"
+
+          # Verify both .app bundles exist
+          if [ ! -d "${ARM_APP}" ]; then
+            echo "ERROR: ARM app bundle not found at ${ARM_APP}"
+            echo "Available bundles:"
+            ls -la src-tauri/target/aarch64-apple-darwin/release/bundle/macos/ 2>/dev/null || echo "(directory missing)"
+            exit 1
+          fi
+          if [ ! -d "${X64_APP}" ]; then
+            echo "ERROR: x64 app bundle not found at ${X64_APP}"
+            echo "Available bundles:"
+            ls -la src-tauri/target/x86_64-apple-darwin/release/bundle/macos/ 2>/dev/null || echo "(directory missing)"
+            exit 1
+          fi
 
           mkdir -p "${UNIVERSAL_DIR}"
           cp -R "${X64_APP}" "${UNIVERSAL_APP}"
@@ -184,7 +198,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          DMG_PATH="src-tauri/target/universal-macos/release/bundle/macos/Finder All_${VERSION}_universal.dmg"
+          DMG_PATH="src-tauri/target/universal-macos/release/bundle/macos/Finder_All_${VERSION}_universal.dmg"
           gh release upload "${GITHUB_REF_NAME}" "${DMG_PATH}" --clobber
 
   notify:

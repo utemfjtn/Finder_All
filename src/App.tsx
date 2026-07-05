@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import SearchBar from "./components/SearchBar";
 import FileList from "./components/FileList";
 import Sidebar from "./components/Sidebar";
@@ -6,6 +6,7 @@ import StatusBar from "./components/StatusBar";
 import FilePreview from "./components/FilePreview";
 import HelpPanel from "./components/HelpPanel";
 import EmptyState from "./components/EmptyState";
+import CommandPanel, { type CommandAction } from "./components/CommandPanel";
 import {
   searchFiles,
   getIndexStatus,
@@ -18,6 +19,7 @@ import {
   addFavorite,
   isFavorite,
   removeFavorite,
+  clearSearchHistory,
 } from "./api";
 import type { FileItem, IndexProgress, FileCategory } from "./types";
 import { CATEGORY_EXTENSIONS } from "./types";
@@ -35,6 +37,7 @@ function App() {
   const [matchPath, setMatchPath] = useState(false);
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [showCommandPanel, setShowCommandPanel] = useState(false);
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
   const searchTimeoutRef = useRef<number | null>(null);
 
@@ -177,10 +180,20 @@ function App() {
         return;
       }
 
+      // 命令面板打开时，键盘事件由其内部处理
+      if (showCommandPanel) return;
+
       if (showHelp) {
         if (e.key === "Escape") {
           setShowHelp(false);
         }
+        return;
+      }
+
+      // Cmd/Ctrl+K 打开命令面板
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setShowCommandPanel(true);
         return;
       }
 
@@ -220,12 +233,99 @@ function App() {
         import("./api").then(({ openFileLocation }) =>
           openFileLocation(results[selectedIndex].path)
         );
-      } else if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        // 已被全局快捷键处理，但保险一下
         e.preventDefault();
         document.querySelector<HTMLInputElement>(".search-input")?.focus();
       }
     },
-    [results, selectedIndex, query, previewFile, showHelp, handleOpenFile, handleToggleFavorite]
+    [results, selectedIndex, query, previewFile, showHelp, showCommandPanel, handleOpenFile, handleToggleFavorite]
+  );
+
+  // 命令面板操作列表
+  const commandActions = useMemo<CommandAction[]>(
+    () => [
+      {
+        id: "rebuild-index",
+        title: "重建索引",
+        subtitle: "重新扫描所有索引目录",
+        icon: "🔄",
+        shortcut: "",
+        group: "操作",
+        run: () => {
+          rebuildIndex();
+        },
+      },
+      {
+        id: "clear-search",
+        title: "清空当前搜索",
+        subtitle: "重置搜索框与结果",
+        icon: "🧹",
+        group: "操作",
+        run: () => {
+          setQuery("");
+          setResults([]);
+        },
+      },
+      {
+        id: "clear-history",
+        title: "清空搜索历史",
+        subtitle: "删除全部历史搜索记录",
+        icon: "🗑️",
+        group: "操作",
+        run: () => {
+          clearSearchHistory();
+        },
+      },
+      {
+        id: "hide-window",
+        title: "隐藏窗口",
+        subtitle: "后台运行，快捷键再次呼出",
+        icon: "🙈",
+        shortcut: "Esc",
+        group: "操作",
+        run: () => hideWindow(),
+      },
+      {
+        id: "toggle-sidebar",
+        title: sidebarCollapsed ? "展开侧边栏" : "折叠侧边栏",
+        subtitle: "切换侧边栏显示状态",
+        icon: sidebarCollapsed ? "📖" : "📕",
+        group: "视图",
+        run: () => setSidebarCollapsed((v) => !v),
+      },
+      {
+        id: "focus-search",
+        title: "聚焦搜索框",
+        subtitle: "立刻开始输入搜索",
+        icon: "🔍",
+        group: "视图",
+        run: () => {
+          document.querySelector<HTMLInputElement>(".search-input")?.focus();
+        },
+      },
+      {
+        id: "preview-selected",
+        title: "预览选中文件",
+        subtitle: "查看当前选中文件的详细信息",
+        icon: "👁️",
+        shortcut: "Space",
+        group: "视图",
+        run: () => {
+          if (results[selectedIndex]) setPreviewFile(results[selectedIndex]);
+        },
+      },
+      {
+        id: "show-help",
+        title: "查看帮助",
+        subtitle: "快捷键、搜索语法、使用技巧",
+        icon: "❓",
+        shortcut: "F1",
+        group: "帮助",
+        run: () => setShowHelp(true),
+      },
+    ],
+    [sidebarCollapsed, results, selectedIndex]
   );
 
   const handleRebuildIndex = useCallback(async () => {
@@ -273,6 +373,7 @@ function App() {
             isIndexing={!indexProgress.done}
             fileCount={indexProgress.indexed}
             onHelpClick={() => setShowHelp(true)}
+            onCommandPanelClick={() => setShowCommandPanel(true)}
           />
         )}
         {results.length > 0 && (
@@ -282,12 +383,18 @@ function App() {
             onSelect={setSelectedIndex}
             onOpen={handleOpenFile}
             onFavoritesChange={refreshSidebar}
+            query={query}
           />
         )}
         <StatusBar indexProgress={indexProgress} resultCount={results.length} />
       </div>
       <FilePreview file={previewFile} onClose={() => setPreviewFile(null)} />
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
+      <CommandPanel
+        open={showCommandPanel}
+        onClose={() => setShowCommandPanel(false)}
+        actions={commandActions}
+      />
     </div>
   );
 }

@@ -1,87 +1,110 @@
-# Finder_All
+<div align="center">
 
-一款跨平台的极速文件搜索工具，灵感来源于 Windows 的 Everything 和 macOS 的 HiTooler File Finder。
+# 🔍 Finder_All
 
-## ✨ 特性
+### 最强 · 最美 · 最快 · 最简单的跨平台文件搜索工具
 
-- ⚡ **极速搜索** - 基于文件名索引，毫秒级响应
-- 🔄 **实时搜索** - 输入即搜索，无需等待
-- 🌐 **跨平台** - 支持 Windows、macOS、Linux
-- 🎯 **模糊匹配** - 支持模糊搜索和精确匹配
-- 📁 **多目录索引** - 可自定义索引目录
-- 🔍 **文件过滤** - 按类型、扩展名筛选
-- ⌨️ **快捷键支持** - 上下键选择，回车打开
-- 🎨 **现代 UI** - 深色主题，简洁美观
+让任何人 3 秒钟找到任何文件 —— 无需学习，下载即用。
 
-## 🛠️ 技术栈
+</div>
 
-- **前端**: React + TypeScript + Vite
-- **后端**: Rust + Tauri 2.0
-- **搜索**: Fuzzy Matcher (Skim 算法)
-- **并行**: Rayon 并行计算
+---
 
-## 📦 安装
+## 🚀 一键下载（选一个就行）
 
-### 前置要求
+| 你的系统 | 点击下载 | 说明 |
+|:--------:|:--------:|:-----|
+| 🪟 **Windows** | [`.msi` 安装包](../../releases/latest) | 推荐 · 双击安装 |
+| 🍎 **macOS** (M1/M2/M3/M4/Intel) | [`.dmg` Universal](../../releases/latest) | 一个包适配所有 Mac |
+| 🐧 **Linux** | [`.AppImage`](../../releases/latest) · [`.deb`](../../releases/latest) | AppImage 免安装即用 |
 
-- Node.js >= 18
-- Rust >= 1.70
-- Tauri 2.0 依赖
+> 💡 不知道选哪个？打开 [Releases 页面](../../releases/latest)，浏览器会自动高亮你系统对应的安装包。
 
-### 开发
+---
 
-```bash
-# 安装依赖
-npm install
+## ✨ 为什么选 Finder_All
 
-# 启动开发服务器
-npm run tauri dev
+| 特性 | Finder_All | Everything | macOS Spotlight | 文件管理器 |
+|:-----|:----------:|:---------:|:---------------:|:---------:|
+| ⚡ 毫秒级搜索 | ✅ | ✅ | ⚠️ 较慢 | ❌ 极慢 |
+| 🎨 现代化 UI | ✅ | ❌ 旧界面 | ✅ | ❌ |
+| 🌐 跨平台 | ✅ Win/Mac/Linux | ❌ 仅 Windows | ❌ 仅 macOS | ✅ |
+| ⌨️ 全局快捷键 | ✅ | ✅ | ✅ | ❌ |
+| 🖼️ 文件类型彩色图标 | ✅ | ❌ | ⚠️ | ✅ |
+| ⭐ 收藏 / 🕘 最近打开 | ✅ | ❌ | ⚠️ | ⚠️ |
+| 👁️ 内置预览（图片/文本） | ✅ | ❌ | ✅ | ⚠️ |
+| 🎯 通配符搜索 `*` `?` | ✅ | ✅ | ❌ | ⚠️ |
+| 📦 一键安装 / 免配置 | ✅ | ✅ | ✅ | ✅ |
+
+---
+
+## 🎯 30 秒上手
+
+```
+1️⃣  下载安装 → 双击运行
+2️⃣  按 Cmd/Ctrl + Shift + F 全局呼出
+3️⃣  输入文件名 → 实时显示结果
+4️⃣  ↑↓ 选择 → Enter 打开 / Space 预览
 ```
 
-### 构建
+**就这么简单 —— 不需要教程，不需要配置。**
 
-```bash
-# 构建生产版本
-npm run tauri build
-```
-
-## 🚀 使用说明
-
-1. **首次启动** - 应用会自动索引系统根目录
-2. **搜索** - 在搜索框输入关键词，实时显示结果
-3. **导航** - 使用 ↑↓ 键选择，Enter 打开文件
-4. **右键菜单** - 右键点击文件可打开所在位置
-5. **管理索引** - 侧边栏添加/移除索引目录，重建索引
+---
 
 ## ⌨️ 快捷键
 
 | 快捷键 | 功能 |
-|--------|------|
+|:------|:-----|
+| `Cmd/Ctrl + Shift + F` | 🌐 全局呼出（任何应用前都可呼出） |
+| `Cmd/Ctrl + K` | ⚡ 打开命令面板 |
 | `↑` / `↓` | 选择搜索结果 |
-| `Enter` | 打开选中文件 |
-| 右键 | 显示上下文菜单 |
+| `Enter` | 打开文件 |
+| `Space` | 预览文件（不打开） |
+| `Cmd/Ctrl + D` | ⭐ 收藏 / 取消收藏 |
+| `Cmd/Ctrl + O` | 打开所在文件夹 |
+| `Cmd/Ctrl + L` | 复制文件路径 |
+| `Esc` | 清空搜索 / 隐藏窗口 |
+| `F1` | 查看帮助 |
 
-## 📁 项目结构
+---
 
+## 🔍 搜索语法
+
+| 输入 | 含义 |
+|:----:|:-----|
+| `report` | 文件名包含 report |
+| `*.pdf` | 所有 PDF 文件 |
+| `2024*` | 以 2024 开头的文件 |
+| `*report*.docx` | 路径中包含 report 的 Word 文档 |
+
+支持 `*`（多个字符）和 `?`（单个字符）通配符。
+
+---
+
+## 🛠️ 技术栈
+
+- **前端**：React + TypeScript + Vite
+- **后端**：Rust + Tauri 2.0
+- **搜索**：Skim 模糊匹配 + Rayon 并行计算
+- **包体**：< 10MB，启动 < 100ms
+
+---
+
+## 💝 开发者
+
+```bash
+# 开发
+npm install
+npm run tauri dev
+
+# 构建
+npm run tauri build
 ```
-.
-├── src/                  # 前端源码
-│   ├── components/       # React 组件
-│   ├── api.ts            # Tauri 调用封装
-│   ├── types.ts          # TypeScript 类型定义
-│   ├── App.tsx           # 主应用组件
-│   └── main.tsx          # 入口文件
-├── src-tauri/            # Rust 后端
-│   ├── src/
-│   │   ├── main.rs       # Tauri 主入口
-│   │   ├── index.rs      # 文件索引引擎
-│   │   └── models.rs     # 数据模型
-│   ├── Cargo.toml        # Rust 依赖
-│   └── tauri.conf.json   # Tauri 配置
-├── package.json
-└── vite.config.ts
-```
+
+需要 Node.js ≥ 18 与 Rust ≥ 1.70。
+
+---
 
 ## 📝 License
 
-MIT
+MIT · 欢迎贡献代码、提交 Issue、分享给朋友。

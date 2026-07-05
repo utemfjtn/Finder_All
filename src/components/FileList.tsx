@@ -8,6 +8,7 @@ interface FileListProps {
   onSelect: (index: number) => void;
   onOpen: (file: FileItem) => void;
   onFavoritesChange?: () => void;
+  query?: string;
 }
 
 const ITEM_HEIGHT = 52;
@@ -26,6 +27,38 @@ function getFileType(file: FileItem): string {
   if (["exe", "msi", "dmg", "pkg", "deb", "rpm", "app", "apk"].includes(ext)) return "app";
   if (["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md", "rtf", "csv", "odt", "pages", "numbers", "key"].includes(ext)) return "doc";
   return "file";
+}
+
+// 将通配符 query 转为正则，转义特殊字符
+function buildHighlightRegex(query: string): RegExp | null {
+  if (!query || !query.trim()) return null;
+  // 转义除 * ? 外的特殊字符，* -> .*, ? -> .
+  let pattern = "";
+  for (const ch of query) {
+    if (ch === "*") pattern += ".*";
+    else if (ch === "?") pattern += ".";
+    else if (/[.*+?^${}()|[\]\\]/.test(ch)) pattern += "\\" + ch;
+    else pattern += ch;
+  }
+  try {
+    // 注意：split 配合捕获组时，匹配项落在奇数 index
+    return new RegExp(`(${pattern})`, "gi");
+  } catch {
+    return null;
+  }
+}
+
+// 高亮匹配文本（split + 捕获组：奇数 index 为匹配片段）
+function highlightMatch(text: string, regex: RegExp | null): React.ReactNode {
+  if (!regex) return text;
+  const parts = text.split(regex);
+  return parts.map((part, i) =>
+    i % 2 === 1 ? (
+      <mark key={i} className="search-highlight">{part}</mark>
+    ) : (
+      part ? <span key={i}>{part}</span> : null
+    )
+  );
 }
 
 // 不同文件类型的 SVG 图标
@@ -73,12 +106,15 @@ function FileTypeIcon({ type }: { type: string }) {
   );
 }
 
-const FileList: React.FC<FileListProps> = ({ files, selectedIndex, onSelect, onOpen, onFavoritesChange }) => {
+const FileList: React.FC<FileListProps> = ({ files, selectedIndex, onSelect, onOpen, onFavoritesChange, query }) => {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: FileItem } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
   const [favoritesCache, setFavoritesCache] = useState<Set<string>>(new Set());
+
+  // 高亮正则缓存：依赖 query
+  const highlightRegex = useMemo(() => buildHighlightRegex(query || ""), [query]);
 
   useEffect(() => {
     try {
@@ -212,8 +248,8 @@ const FileList: React.FC<FileListProps> = ({ files, selectedIndex, onSelect, onO
     >
       <FileTypeIcon type={getFileType(file)} />
       <div className="file-info">
-        <div className="file-name">{file.name}</div>
-        <div className="file-path">{file.path}</div>
+        <div className="file-name">{highlightMatch(file.name, highlightRegex)}</div>
+        <div className="file-path">{highlightMatch(file.path, highlightRegex)}</div>
       </div>
       <div className="file-meta">
         <span className="file-size">{file.is_dir ? "" : formatSize(file.size)}</span>
