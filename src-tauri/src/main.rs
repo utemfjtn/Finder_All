@@ -204,7 +204,8 @@ fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::
 
     let menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
 
-    let icon = Image::new(include_bytes!("../icons/icon.png").to_vec());
+    let rgba = vec![0u8; 4 * 32 * 32];
+    let icon = Image::new(&rgba, 32, 32);
     let app_handle = app.clone();
 
     let _tray = TrayIconBuilder::with_id("main-tray")
@@ -300,7 +301,7 @@ fn main() {
             show_window,
             read_file_text,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             setup_tray(app.handle())?;
             setup_global_shortcut(app.handle())?;
 

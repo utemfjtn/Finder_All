@@ -9,7 +9,7 @@ use std::thread;
 use std::time::Duration;
 
 pub struct FileWatcher {
-    watcher: Option<RecommendedWatcher>,
+    watcher: RwLock<Option<RecommendedWatcher>>,
     watched_paths: RwLock<Vec<String>>,
     is_running: RwLock<bool>,
 }
@@ -20,7 +20,7 @@ unsafe impl Sync for FileWatcher {}
 impl FileWatcher {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
-            watcher: None,
+            watcher: RwLock::new(None),
             watched_paths: RwLock::new(Vec::new()),
             is_running: RwLock::new(false),
         })
@@ -58,7 +58,7 @@ impl FileWatcher {
             }
         }
 
-        self_arc.watcher = Some(watcher);
+        *self_arc.watcher.write() = Some(watcher);
 
         let self_arc2 = Arc::clone(&self_arc);
         let files_arc = Arc::clone(&files);
