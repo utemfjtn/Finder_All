@@ -64,6 +64,14 @@ impl FileIndex {
             *indexing = true;
         }
 
+        {
+            let mut progress = self_arc.progress.write();
+            progress.done = false;
+            progress.indexed = 0;
+            progress.total = 0;
+            progress.current_path = String::new();
+        }
+
         thread::spawn(move || {
             self_arc.do_indexing(paths);
             let mut indexing = self_arc.is_indexing.write();

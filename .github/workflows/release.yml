@@ -96,49 +96,112 @@ jobs:
   notify:
     needs: build
     runs-on: ubuntu-latest
-    if: success()
+    if: always()
     steps:
       - name: Send Feishu notification
+        env:
+          LARK_WEBHOOK: ${{ secrets.LARK_AT_ALL }}
         run: |
           TAG="${{ github.ref_name }}"
           REPO="${{ github.repository }}"
           RELEASE_URL="https://github.com/${REPO}/releases/tag/${TAG}"
+          BUILD_STATUS="${{ needs.build.result }}"
 
-          curl -s -X POST \
-            "https://open.feishu.cn/open-apis/bot/v2/hook/${{ secrets.LARK_AT_ALL }}" \
-            -H "Content-Type: application/json" \
-            -d '{
+          export TAG REPO RELEASE_URL BUILD_STATUS
+
+          python3 << 'PYEOF'
+          import json
+          import urllib.request
+          import os
+
+          tag = os.environ["TAG"]
+          repo = os.environ["REPO"]
+          release_url = os.environ["RELEASE_URL"]
+          build_status = os.environ.get("BUILD_STATUS", "unknown")
+          webhook_raw = os.environ.get("LARK_WEBHOOK", "")
+
+          if webhook_raw.startswith("http"):
+              webhook_url = webhook_raw
+          else:
+              webhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/" + webhook_raw
+
+          print(f"Webhook URL (first 50 chars): {webhook_url[:50]}...")
+          print(f"Build status: {build_status}")
+          print(f"Tag: {tag}")
+          print(f"Repo: {repo}")
+
+          if build_status == "success":
+              status_text = "构建成功"
+              template = "green"
+          else:
+              status_text = "构建失败"
+              template = "red"
+
+          content = (
+              f"**版本：** {tag}\n"
+              f"**仓库：** [{repo}]({release_url})\n"
+              f"**状态：** {status_text}\n\n"
+              "**支持平台：**\n"
+              "- macOS (Apple Silicon M1/M2/M3)\n"
+              "- macOS (Intel)\n"
+              "- Linux (x64)\n"
+              "- Windows (x64)\n\n"
+              "**安装包类型：**\n"
+              "- macOS: .dmg / .app.tar.gz\n"
+              "- Linux: .deb / .AppImage / .rpm\n"
+              "- Windows: .msi / .exe"
+          )
+
+          payload = {
               "msg_type": "interactive",
               "card": {
-                "header": {
-                  "title": {
-                    "tag": "plain_text",
-                    "content": "✅ Finder_All 构建成功"
-                  },
-                  "template": "green"
-                },
-                "elements": [
-                  {
-                    "tag": "div",
-                    "text": {
-                      "tag": "lark_md",
-                      "content": "**版本：** '"${TAG}"'\n**仓库：** ['REPO'](https://github.com/'REPO')\n\n**支持平台：**\n- macOS (Apple Silicon M1/M2/M3)\n- macOS (Intel)\n- Linux (x64)\n- Windows (x64)\n\n**安装包类型：**\n- macOS: .dmg\n- Linux: .deb / .AppImage\n- Windows: .msi / .exe"
-                    }
-                  },
-                  {
-                    "tag": "action",
-                    "actions": [
-                      {
-                        "tag": "button",
-                        "text": {
+                  "header": {
+                      "title": {
                           "tag": "plain_text",
-                          "content": "下载 Release"
-                        },
-                        "url": "'"${RELEASE_URL}"'",
-                        "type": "primary"
+                          "content": f"Finder_All {status_text}"
+                      },
+                      "template": template
+                  },
+                  "elements": [
+                      {
+                          "tag": "div",
+                          "text": {
+                              "tag": "lark_md",
+                              "content": content
+                          }
+                      },
+                      {
+                          "tag": "action",
+                          "actions": [
+                              {
+                                  "tag": "button",
+                                  "text": {
+                                      "tag": "plain_text",
+                                      "content": "查看 Release"
+                                  },
+                                  "url": release_url,
+                                  "type": "primary"
+                              }
+                          ]
                       }
-                    ]
-                  }
-                ]
+                  ]
               }
-            }'
+          }
+
+          data = json.dumps(payload).encode("utf-8")
+          print(f"Payload size: {len(data)} bytes")
+
+          req = urllib.request.Request(webhook_url, data=data, headers={"Content-Type": "application/json"})
+          try:
+              with urllib.request.urlopen(req, timeout=10) as resp:
+                  print("Status:", resp.status)
+                  response_body = resp.read().decode("utf-8")
+                  print("Response:", response_body)
+          except urllib.error.HTTPError as e:
+              print("HTTP Error:", e.code)
+              print("Response:", e.read().decode("utf-8"))
+              raise
+          except Exception as e:
+              print("Error:", str(e))
+              raise
+          PYEOF
