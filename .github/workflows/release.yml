@@ -70,3 +70,53 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+  notify:
+    needs: build
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Send Feishu notification
+        run: |
+          TAG="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+          RELEASE_URL="https://github.com/${REPO}/releases/tag/${TAG}"
+
+          curl -s -X POST \
+            "https://open.feishu.cn/open-apis/bot/v2/hook/${{ secrets.LARK_AT_ALL }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "msg_type": "interactive",
+              "card": {
+                "header": {
+                  "title": {
+                    "tag": "plain_text",
+                    "content": "✅ Finder_All 构建成功"
+                  },
+                  "template": "green"
+                },
+                "elements": [
+                  {
+                    "tag": "div",
+                    "text": {
+                      "tag": "lark_md",
+                      "content": "**版本：** '"${TAG}"'\n**仓库：** ['REPO'](https://github.com/'REPO')\n\n**支持平台：**\n- macOS (Apple Silicon M1/M2/M3)\n- macOS (Intel)\n- Linux (x64)\n- Windows (x64)\n\n**安装包类型：**\n- macOS: .dmg\n- Linux: .deb / .AppImage\n- Windows: .msi / .exe"
+                    }
+                  },
+                  {
+                    "tag": "action",
+                    "actions": [
+                      {
+                        "tag": "button",
+                        "text": {
+                          "tag": "plain_text",
+                          "content": "下载 Release"
+                        },
+                        "url": "'"${RELEASE_URL}"'",
+                        "type": "primary"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }'
